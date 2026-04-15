@@ -1,0 +1,26 @@
+# Components List and Cost
+
+## Hardware Components
+
+| Component                 | Quantity | Role                   | Cost (₹ approx) |
+| ------------------------- | -------- | ---------------------- | --------------- |
+| ESP32 Dev Module          | 1        | Microcontroller + WiFi | 505             |
+| HC-SR04 Ultrasonic Sensor | 1        | Distance measurement   | 140              |
+| PIR Sensor                | 1        | Motion detection       | 150              |
+| SW-420 Vibration Sensor   | 1        | Tamper detection       | 120              |
+| Reed Switch               | 1        | Door status detection  | 150              |
+| MQ135 Gas Sensor          | 1        | Air quality detection  | 210             |
+| DHT22 Temperature Sensor  | 1        | Temperature sensing    | 180             |
+| SSD1306 OLED Display      | 1        | Local display          | 195             |
+| Active Buzzer             | 1        | Alert system           | 50              |
+| Jumper Wires + Breadboard | -        | Connections            | 200             |
+
+## Total Cost
+
+Approx ₹1500 – ₹2000
+
+## Notes
+
+* Cost may vary depending on vendor
+* All components are easily available in local electronics stores
+* Designed to be low-cost and scalable
