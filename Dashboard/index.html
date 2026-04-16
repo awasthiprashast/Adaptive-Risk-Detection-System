@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>ESP32 Security</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ── Reset ─────────────────────────────────────── */
+*{margin:0;padding:0;box-sizing:border-box;}
+body{font-family:'Rajdhani',sans-serif;background:radial-gradient(circle at 50% -10%,#2a1212 0%,#09090b 72%);color:#fafafa;min-height:100vh;width:100vw;overflow:hidden;display:flex;padding:1.1rem;gap:1rem;}
+/* ── Particle canvas ────────────────────────────── */
+#pc{position:fixed;inset:0;z-index:0;pointer-events:none;opacity:.55;}
+/* ── Boot overlay ───────────────────────────────── */
+#bo{position:fixed;inset:0;z-index:9999;background:#09090b;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1.8rem;transition:opacity .85s ease;}
+#bo.out{opacity:0;pointer-events:none;}
+#bo-grid{position:absolute;inset:0;background-image:linear-gradient(rgba(255,60,60,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(255,60,60,.04) 1px,transparent 1px);background-size:40px 40px;pointer-events:none;}
+#bo-scan{position:absolute;left:0;right:0;height:2px;background:linear-gradient(90deg,transparent,rgba(255,77,77,.6),transparent);animation:scan 2.2s linear infinite;}
+@keyframes scan{0%{top:-2px}100%{top:100%}}
+#bo-title{font-family:'Share Tech Mono',monospace;font-size:clamp(1.3rem,4vw,2rem);letter-spacing:.35em;color:#ff4d4d;text-shadow:0 0 28px rgba(255,77,77,.5);min-height:2.4rem;text-align:center;}
+#bo-sub{font-family:'Share Tech Mono',monospace;font-size:.62rem;letter-spacing:.22em;color:#3f3f46;opacity:0;transition:opacity .5s ease;}
+#bo-bar-wrap{width:260px;max-width:80vw;height:2px;background:rgba(255,255,255,.07);border-radius:2px;overflow:hidden;}
+#bo-bar{height:100%;width:0%;background:linear-gradient(90deg,#ff4d4d,#ff9999);border-radius:2px;transition:width .3s ease;}
+#bo-status{font-family:'Share Tech Mono',monospace;font-size:.62rem;color:#52525b;letter-spacing:.12em;height:.9rem;}
+#bo-armed{font-family:'Share Tech Mono',monospace;font-size:1rem;letter-spacing:.35em;color:#4ec9b0;text-shadow:0 0 20px rgba(78,201,176,.55);opacity:0;transition:opacity .4s ease;}
+/* ── Sidebar ────────────────────────────────────── */
+.sb{width:280px;flex-shrink:0;display:flex;flex-direction:column;gap:.85rem;height:100vh;z-index:10;overflow-y:auto;scrollbar-width:none;}
+.sb::-webkit-scrollbar{display:none;}
+/* ── Title ──────────────────────────────────────── */
+.ttl-row{display:flex;flex-direction:column;align-items:center;gap:.15rem;padding:.3rem 0;}
+.ttl{font-size:1.1rem;font-weight:700;letter-spacing:5px;text-transform:uppercase;background:linear-gradient(90deg,#ff4d4d,#ff9999,#ff4d4d);background-size:200%;-webkit-background-clip:text;-webkit-text-fill-color:transparent;animation:tshim 3s linear infinite;}
+@keyframes tshim{0%{background-position:0%}100%{background-position:200%}}
+.ttl-sub{font-size:.58rem;color:#3f3f46;letter-spacing:.22em;font-family:'Share Tech Mono',monospace;}
+/* ── Status pill ────────────────────────────────── */
+.pill{display:flex;align-items:center;justify-content:center;gap:.45rem;font-size:.7rem;font-weight:700;letter-spacing:.12em;padding:.3rem .9rem;border-radius:20px;font-family:'Share Tech Mono',monospace;}
+.pill-low {background:rgba(78,201,176,.09);border:1px solid rgba(78,201,176,.28);color:#4ec9b0;}
+.pill-med {background:rgba(197,160,89,.09);border:1px solid rgba(197,160,89,.28);color:#c5a059;}
+.pill-high{background:rgba(255,77,77,.1); border:1px solid rgba(255,77,77,.38); color:#ff4d4d;animation:pp 1.4s ease-in-out infinite;}
+@keyframes pp{0%,100%{box-shadow:0 0 0 0 rgba(255,77,77,0)}50%{box-shadow:0 0 10px 2px rgba(255,77,77,.28)}}
+.dot{width:6px;height:6px;border-radius:50%;}
+.pill-low  .dot{background:#4ec9b0;box-shadow:0 0 5px #4ec9b0;}
+.pill-med  .dot{background:#c5a059;box-shadow:0 0 5px #c5a059;animation:dp 1.2s ease-in-out infinite;}
+.pill-high .dot{background:#ff4d4d;box-shadow:0 0 7px #ff4d4d;animation:dp .7s ease-in-out infinite;}
+@keyframes dp{0%,100%{opacity:1}50%{opacity:.25}}
+/* ── Sensor grid ────────────────────────────────── */
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:.7rem;}
+.card{background:rgba(22,22,26,.5);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.055);border-radius:13px;padding:.9rem .8rem;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:76px;opacity:0;animation:cin .5s cubic-bezier(.175,.885,.32,1.275) forwards;position:relative;overflow:hidden;transition:border-color .3s,box-shadow .3s;}
+.sg .card:nth-child(1){animation-delay:.08s}.sg .card:nth-child(2){animation-delay:.16s}
+.sg .card:nth-child(3){animation-delay:.24s}.sg .card:nth-child(4){animation-delay:.32s}
+.sg .card:nth-child(5){animation-delay:.4s} .sg .card:nth-child(6){animation-delay:.48s}
+@keyframes cin{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+.card:hover{transform:translateY(-2px) scale(1.025);}
+.cl{font-size:.58rem;color:#71717a;letter-spacing:.13em;text-transform:uppercase;margin-bottom:.35rem;font-weight:600;}
+.cv{font-size:1.1rem;font-weight:700;font-family:'Share Tech Mono',monospace;transition:color .3s;}
+.cu{font-size:.6rem;color:#52525b;margin-top:2px;}
+/* Card state variants */
+.co{border-color:rgba(78,201,176,.28)!important;box-shadow:0 0 16px rgba(78,201,176,.09)!important;}.co .cv{color:#4ec9b0;}
+.cw{border-color:rgba(197,160,89,.35)!important;box-shadow:0 0 16px rgba(197,160,89,.12)!important;}.cw .cv{color:#c5a059;}
+.ca{border-color:rgba(255,77,77,.4)!important; box-shadow:0 0 18px rgba(255,77,77,.18)!important;animation:cin 0s forwards,ap 1.8s ease-in-out infinite!important;}
+.ca .cv{color:#ff4d4d;}
+@keyframes ap{0%,100%{box-shadow:0 0 14px rgba(255,77,77,.12)}50%{box-shadow:0 0 30px rgba(255,77,77,.36)}}
+/* ── Buttons ─────────────────────────────────────── */
+.btn-row{display:flex;gap:.7rem;}
+.btn{flex:1;border:none;border-radius:9px;font-family:'Rajdhani',sans-serif;font-size:.78rem;font-weight:700;letter-spacing:.12em;text-transform:uppercase;padding:.7rem;cursor:pointer;transition:all .28s cubic-bezier(.175,.885,.32,1.275);position:relative;overflow:hidden;}
+.b-sil{background:linear-gradient(135deg,#ff4d4d,#c73333);color:#fff;box-shadow:0 3px 14px rgba(255,77,77,.32);}
+.b-sil:hover{transform:translateY(-2px);box-shadow:0 5px 20px rgba(255,77,77,.5);filter:brightness(1.08);}
+.b-rst{background:rgba(197,160,89,.09);color:#c5a059;border:1px solid rgba(197,160,89,.28);box-shadow:none;}
+.b-rst:hover{background:rgba(197,160,89,.17);transform:translateY(-1px);}
+.btn:active{transform:translateY(1px) scale(.98);}
+.rip{position:absolute;border-radius:50%;background:rgba(255,255,255,.22);transform:scale(0);pointer-events:none;animation:ripa .52s linear;}
+@keyframes ripa{to{transform:scale(4.5);opacity:0}}
+/* ── Refresh bar ─────────────────────────────────── */
+.rbar-w{height:2px;background:rgba(255,255,255,.05);border-radius:2px;overflow:hidden;}
+.rbar{height:100%;background:rgba(255,77,77,.35);border-radius:2px;}
+/* ── Main area ───────────────────────────────────── */
+.ma{flex:1;display:flex;flex-direction:column;gap:.85rem;height:100vh;z-index:10;overflow-y:auto;scrollbar-width:none;}
+.ma::-webkit-scrollbar{display:none;}
+/* ── Risk panel ──────────────────────────────────── */
+.rp{background:rgba(22,22,26,.5);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.055);border-radius:15px;padding:1.3rem 1.5rem;display:flex;flex-direction:column;gap:.9rem;opacity:0;animation:cin .5s .18s cubic-bezier(.175,.885,.32,1.275) forwards;}
+.rp-row{display:flex;align-items:center;gap:1.1rem;}
+.r-tag{font-size:.58rem;color:#52525b;letter-spacing:.2em;text-transform:uppercase;font-weight:700;margin-bottom:.25rem;}
+.rbadge{font-size:2.2rem;font-weight:700;letter-spacing:.25em;font-family:'Share Tech Mono',monospace;transition:color .3s;}
+.risk-low {color:#4ec9b0;}
+.risk-med {color:#c5a059;}
+.risk-high{color:#ff4d4d;animation:rf .85s ease-in-out infinite alternate;}
+@keyframes rf{from{opacity:1}to{opacity:.5}}
+.dvdr{width:1px;background:rgba(255,255,255,.07);align-self:stretch;}
+.ac{flex:1;display:flex;flex-direction:column;gap:.35rem;}
+.atxt{font-size:.88rem;font-weight:600;color:#ff6b6b;font-family:'Share Tech Mono',monospace;letter-spacing:.04em;line-height:1.35;transition:color .3s;}
+.atxt-ok{color:#4ec9b0;}
+.abar{height:2px;border-radius:2px;background:rgba(255,255,255,.05);overflow:hidden;}
+.abar-f{height:100%;border-radius:2px;transition:width .5s,background .3s;}
+.fill-low {background:#4ec9b0;width:22%;}
+.fill-med {background:#c5a059;width:60%;}
+.fill-high{background:linear-gradient(90deg,#ff4d4d,#ff9999);width:100%;animation:bp .95s ease-in-out infinite alternate;}
+@keyframes bp{from{opacity:1}to{opacity:.45}}
+/* ── Buzzer legend ───────────────────────────────── */
+.bz-card{background:rgba(22,22,26,.5);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.055);border-radius:15px;padding:1.1rem 1.3rem;opacity:0;animation:cin .5s .3s cubic-bezier(.175,.885,.32,1.275) forwards;}
+.sec-ttl{font-size:.58rem;color:#52525b;letter-spacing:.2em;text-transform:uppercase;font-weight:700;margin-bottom:.75rem;}
+.bz-list{display:flex;flex-direction:column;gap:.42rem;}
+.bz-row{display:flex;align-items:center;gap:.75rem;padding:.45rem .8rem;background:rgba(9,9,11,.38);border-radius:8px;border-left:2px solid transparent;}
+.bz-row.fr{border-left-color:#ff4d4d;}.bz-row.me{border-left-color:#c5a059;}.bz-row.sl{border-left-color:#4ec9b0;}
+.bz-ic{font-size:.9rem;flex-shrink:0;width:18px;text-align:center;}
+.bz-nm{font-size:.82rem;font-weight:600;color:#d4d4d8;flex:1;}
+.bz-tp{font-size:.6rem;font-family:'Share Tech Mono',monospace;color:#52525b;}
+/* ── Toast ───────────────────────────────────────── */
+#tc{position:fixed;top:1.1rem;right:1.1rem;display:flex;flex-direction:column;gap:.45rem;z-index:8000;pointer-events:none;}
+.toast{background:rgba(13,13,16,.96);border:1px solid rgba(255,77,77,.35);border-left:3px solid #ff4d4d;border-radius:9px;padding:.5rem .85rem;font-size:.72rem;color:#ff8080;font-family:'Share Tech Mono',monospace;backdrop-filter:blur(18px);animation:tin .32s cubic-bezier(.175,.885,.32,1.275);max-width:220px;line-height:1.35;pointer-events:none;}
+.toast.tok{border-color:rgba(78,201,176,.35);border-left-color:#4ec9b0;color:#6ec9b0;}
+.toast.out{animation:tout .28s ease forwards;}
+@keyframes tin {from{opacity:0;transform:translateX(28px)}to{opacity:1;transform:translateX(0)}}
+@keyframes tout{to{opacity:0;transform:translateX(28px)}}
+/* ── Mobile ──────────────────────────────────────── */
+@media(max-width:680px){body{flex-direction:column;height:auto;overflow-y:auto;}.sb{width:100%;height:auto;}.ma{height:auto;}}
+</style>
+</head>
+<body>
+
+<canvas id="pc"></canvas>
+
+<!-- Boot overlay -->
+<div id="bo">
+  <div id="bo-grid"></div>
+  <div id="bo-scan"></div>
+  <div id="bo-title">&nbsp;</div>
+  <div id="bo-bar-wrap"><div id="bo-bar"></div></div>
+  <div id="bo-status">STANDBY</div>
+  <div id="bo-armed">&#9632; SYSTEM ARMED &#9632;</div>
+  <div id="bo-sub">INTRUSION DETECTION SYSTEM &middot; NODE-01</div>
+</div>
+
+<!-- Sidebar -->
+<div class="sb">
+  <div class="ttl-row">
+    <div class="ttl">ESP32 SEC</div>
+    <div class="ttl-sub">INTRUSION DETECTION &middot; NODE-01</div>
+  </div>
+
+  <!-- Risk pill -->
+  <div id="risk-pill" class="pill pill-low">
+    <span class="dot"></span>
+    <span id="pill-txt">RISK:&nbsp;LOW</span>
+  </div>
+
+  <!-- Sensor cards -->
+  <div class="sg">
+    <div id="c-dist" class="card co">
+      <div class="cl">Distance</div>
+      <div class="cv" id="v-dist">--</div>
+      <div class="cu">cm</div>
+    </div>
+    <div id="c-pir" class="card co">
+      <div class="cl">PIR</div>
+      <div class="cv" id="v-pir">--</div>
+    </div>
+    <div id="c-door" class="card co">
+      <div class="cl">Door</div>
+      <div class="cv" id="v-door">--</div>
+    </div>
+    <div id="c-vib" class="card co">
+      <div class="cl">Vibration</div>
+      <div class="cv" id="v-vib">--</div>
+    </div>
+    <div id="c-air" class="card co">
+      <div class="cl">Air &Delta;</div>
+      <div class="cv" id="v-air">--</div>
+      <div class="cu">ppm offset</div>
+    </div>
+    <div class="card co">
+      <div class="cl">Temp</div>
+      <div class="cv" id="v-temp">--</div>
+      <div class="cu">&deg;C</div>
+    </div>
+  </div>
+
+  <div class="btn-row">
+    <button class="btn b-sil" onclick="doSilence()">&#128277;&nbsp;Silence</button>
+    <button class="btn b-rst" onclick="doReset()">&#8634;&nbsp;Reset Air</button>
+  </div>
+
+  <!-- Countdown bar — restarted by JS on every successful poll -->
+  <div class="rbar-w"><div id="rbar" class="rbar"></div></div>
+</div>
+
+<!-- Main area -->
+<div class="ma">
+
+  <div class="rp">
+    <div class="rp-row">
+      <div>
+        <div class="r-tag">Risk Level</div>
+        <div id="risk-badge" class="rbadge risk-low">LOW</div>
+      </div>
+      <div class="dvdr"></div>
+      <div class="ac">
+        <div class="r-tag">Active Alert</div>
+        <div id="alert-txt" class="atxt atxt-ok">ALL CLEAR</div>
+      </div>
+    </div>
+    <div class="abar"><div id="abar-fill" class="abar-f fill-low"></div></div>
+  </div>
+
+  <div class="bz-card">
+    <div class="sec-ttl">&#9889; Buzzer Response Logic</div>
+    <div class="bz-list">
+      <div class="bz-row fr"><span class="bz-ic">&#128293;</span><span class="bz-nm">Fire + Gas</span><span class="bz-tp">FAST BEEP</span></div>
+      <div class="bz-row fr"><span class="bz-ic">&#128680;</span><span class="bz-nm">Forced Entry</span><span class="bz-tp">FAST BEEP</span></div>
+      <div class="bz-row fr"><span class="bz-ic">&#128225;</span><span class="bz-nm">Very Close Object</span><span class="bz-tp">FAST BEEP</span></div>
+      <div class="bz-row me"><span class="bz-ic">&#9888;</span><span class="bz-nm">Near Object</span><span class="bz-tp">MEDIUM BEEP</span></div>
+      <div class="bz-row sl"><span class="bz-ic">&#128168;</span><span class="bz-nm">Air Quality Warning</span><span class="bz-tp">SLOW BEEP</span></div>
+    </div>
+  </div>
+
+</div>
+
+<div id="tc"></div>
+
+<script>
+// ── Particles ────────────────────────────────────────────────
+;(function(){
+  const c=document.getElementById('pc'),x=c.getContext('2d');let p=[],N=48;
+  function init(){c.width=innerWidth;c.height=innerHeight;p=Array.from({length:N},()=>({x:Math.random()*c.width,y:Math.random()*c.height,vx:(Math.random()-.5)*.22,vy:(Math.random()-.5)*.22,r:Math.random()*1.6+.6}));}
+  function tick(){x.clearRect(0,0,c.width,c.height);p.forEach(d=>{d.x+=d.vx;d.y+=d.vy;if(d.x<0)d.x=c.width;if(d.x>c.width)d.x=0;if(d.y<0)d.y=c.height;if(d.y>c.height)d.y=0;x.beginPath();x.arc(d.x,d.y,d.r,0,6.28);x.fillStyle='rgba(255,90,90,.7)';x.fill();});requestAnimationFrame(tick);}
+  init();tick();addEventListener('resize',init);
+})();
+
+// ── Boot animation ───────────────────────────────────────────
+;(function(){
+  const POOL='ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#!%&*?><';
+  const TARGET='ESP32 SECURITY';
+  const STATS=['INITIALIZING...','SCANNING SENSORS...','CONNECTING WIFI...','ARMING PERIMETER...'];
+  const titleEl=document.getElementById('bo-title');
+  const barEl  =document.getElementById('bo-bar');
+  const statEl =document.getElementById('bo-status');
+  const armedEl=document.getElementById('bo-armed');
+  const subEl  =document.getElementById('bo-sub');
+  const ov     =document.getElementById('bo');
+  let resolved=0,si=0;
+  const stInt=setInterval(()=>{si=(si+1)%STATS.length;statEl.textContent=STATS[si];},720);
+  const scInt=setInterval(()=>{
+    let out='';
+    for(let i=0;i<TARGET.length;i++){
+      if(i<resolved||TARGET[i]===' ')out+=TARGET[i];
+      else out+=POOL[Math.floor(Math.random()*POOL.length)];
+    }
+    titleEl.textContent=out;
+  },55);
+  function next(){
+    if(TARGET[resolved]===' ')resolved++;
+    if(resolved>=TARGET.length){
+      clearInterval(scInt);clearInterval(stInt);
+      titleEl.textContent=TARGET;
+      barEl.style.width='100%';
+      statEl.style.opacity='0';
+      setTimeout(()=>{armedEl.style.opacity='1';subEl.style.opacity='1';},350);
+      setTimeout(()=>{ov.classList.add('out');setTimeout(()=>ov.remove(),900);},1250);
+      return;
+    }
+    resolved++;
+    barEl.style.width=(resolved/TARGET.length*88)+'%';
+    setTimeout(next,120+Math.random()*80);
+  }
+  setTimeout(next,550);
+})();
+
+// ── Button ripple ────────────────────────────────────────────
+document.addEventListener('click',e=>{
+  const b=e.target.closest('button');if(!b)return;
+  const r=b.getBoundingClientRect(),sz=Math.max(r.width,r.height)*1.5;
+  const s=document.createElement('span');s.className='rip';
+  s.style.cssText='width:'+sz+'px;height:'+sz+'px;left:'+(e.clientX-r.left-sz/2)+'px;top:'+(e.clientY-r.top-sz/2)+'px;';
+  b.appendChild(s);s.addEventListener('animationend',()=>s.remove());
+});
+
+// ── Toast ────────────────────────────────────────────────────
+function toast(msg,ok){
+  const el=document.createElement('div');el.className='toast'+(ok?' tok':'');el.textContent=msg;
+  document.getElementById('tc').appendChild(el);
+  setTimeout(()=>{el.classList.add('out');setTimeout(()=>el.remove(),300);},3400);
+}
+
+// ── Refresh bar animation ────────────────────────────────────
+// We drive it manually with a CSS transition instead of a keyframe
+// so we can restart it cleanly on each poll.
+const rbarEl = document.getElementById('rbar');
+function restartRbar() {
+  rbarEl.style.transition = 'none';
+  rbarEl.style.width = '100%';
+  // Force reflow
+  rbarEl.getBoundingClientRect();
+  rbarEl.style.transition = 'width 0.4s linear';
+  rbarEl.style.width = '0%';
+}
+
+// ── DOM helpers ──────────────────────────────────────────────
+function setCardState(id, state) {
+  // state: 'co' | 'cw' | 'ca'
+  const el = document.getElementById(id);
+  el.classList.remove('co','cw','ca');
+  el.classList.add(state);
+}
+
+// ── Apply JSON data to the DOM ───────────────────────────────
+let prevRisk = '';
+let prevAlert = '';
+
+function applyData(d) {
+  const risk  = d.risk;   // "LOW" | "MEDIUM" | "HIGH" | "CRITICAL"
+  const alert = d.alert;
+  const isHigh = (risk === 'HIGH' || risk === 'CRITICAL');
+  const isMed  = (risk === 'MEDIUM');
+
+  // ── Pill ──────────────────────────────────────────────────
+  const pill = document.getElementById('risk-pill');
+  pill.className = 'pill ' + (isHigh ? 'pill-high' : isMed ? 'pill-med' : 'pill-low');
+  document.getElementById('pill-txt').textContent = 'RISK:\u00a0' + risk;
+
+  // ── Risk badge ────────────────────────────────────────────
+  const badge = document.getElementById('risk-badge');
+  badge.className = 'rbadge ' + (isHigh ? 'risk-high' : isMed ? 'risk-med' : 'risk-low');
+  badge.textContent = risk;
+
+  // ── Alert text ────────────────────────────────────────────
+  const atxt = document.getElementById('alert-txt');
+  atxt.className = 'atxt' + (risk === 'LOW' ? ' atxt-ok' : '');
+  atxt.textContent = alert;
+
+  // ── Progress bar ──────────────────────────────────────────
+  const fill = document.getElementById('abar-fill');
+  fill.className = 'abar-f ' + (isHigh ? 'fill-high' : isMed ? 'fill-med' : 'fill-low');
+
+  // ── Sensor cards ──────────────────────────────────────────
+  // Distance
+  document.getElementById('v-dist').textContent = Math.round(d.distance);
+  setCardState('c-dist',
+    d.distance < 15 ? 'ca' : d.distance < 30 ? 'cw' : 'co');
+
+  // PIR
+  document.getElementById('v-pir').textContent = d.pir ? 'MOTION' : 'CLEAR';
+  setCardState('c-pir', d.pir ? 'ca' : 'co');
+
+  // Door
+  document.getElementById('v-door').textContent = d.door ? 'CLOSED' : 'OPEN';
+  setCardState('c-door', !d.door ? 'ca' : 'co');
+
+  // Vibration
+  document.getElementById('v-vib').textContent = d.vibration ? 'YES' : 'NO';
+  setCardState('c-vib', d.vibration ? 'ca' : 'co');
+
+  // Air delta
+  document.getElementById('v-air').textContent = d.airDelta;
+  setCardState('c-air',
+    d.airDelta > 200 ? 'ca' : d.airDelta > 100 ? 'cw' : 'co');
+
+  // Temperature (always neutral)
+  document.getElementById('v-temp').textContent = parseFloat(d.temperature).toFixed(1);
+
+  // ── High-risk toast (only fires when risk level changes to HIGH) ──
+  if (isHigh && prevRisk !== risk) {
+    toast('\u26a0 ' + alert);
+  }
+  prevRisk  = risk;
+  prevAlert = alert;
+}
+
+// ── Poll /api every 2 s ──────────────────────────────────────
+function poll() {
+  fetch('/api')
+    .then(r => r.json())
+    .then(d => {
+      applyData(d);
+      restartRbar();
+    })
+    .catch(() => toast('Sensor read failed'));
+}
+
+// Kick off: first poll immediately, then every 2 s
+// Delay first poll slightly so the boot animation has started
+setTimeout(() => { poll(); setInterval(poll, 400); }, 800);
+
+// ── Action buttons ───────────────────────────────────────────
+function doSilence() {
+  fetch('/silence', { method: 'POST' })
+    .then(() => toast('Alarm silenced', true))
+    .catch(() => toast('Request failed'));
+}
+function doReset() {
+  fetch('/reset', { method: 'POST' })
+    .then(() => toast('Air baseline reset', true))
+    .catch(() => toast('Request failed'));
+}
+</script>
+</body>
+</html>
